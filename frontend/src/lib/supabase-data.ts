@@ -22,6 +22,9 @@ function dbRowToTreeNode(row: Record<string, unknown>): TreeNode {
         isPatrilineal: row.is_patrilineal as boolean,
         families: (row.families as string[]) || [],
         parentFamilies: (row.parent_families as string[]) || [],
+        title: row.title as string | undefined,
+        degree: row.degree as string | undefined,
+        longevity: row.longevity as number | undefined,
     };
 }
 
@@ -40,7 +43,7 @@ function dbRowToTreeFamily(row: Record<string, unknown>): TreeFamily {
 export async function fetchPeople(): Promise<TreeNode[]> {
     const { data, error } = await supabase
         .from('people')
-        .select('handle, display_name, gender, birth_year, death_year, generation, is_living, is_privacy_filtered, is_patrilineal, families, parent_families')
+        .select('handle, display_name, gender, birth_year, death_year, generation, is_living, is_privacy_filtered, is_patrilineal, families, parent_families, title, degree, longevity')
         .order('generation')
         .order('handle');
 
@@ -189,6 +192,9 @@ export async function updatePerson(
         occupation?: string | null;
         education?: string | null;
         notes?: string | null;
+        title?: string | null;
+        degree?: string | null;
+        longevity?: number | null;
     }
 ): Promise<void> {
     // Convert camelCase → snake_case for DB
@@ -204,6 +210,9 @@ export async function updatePerson(
     if (fields.occupation !== undefined) dbFields.occupation = fields.occupation;
     if (fields.education !== undefined) dbFields.education = fields.education;
     if (fields.notes !== undefined) dbFields.notes = fields.notes;
+    if (fields.title !== undefined) dbFields.title = fields.title;
+    if (fields.degree !== undefined) dbFields.degree = fields.degree;
+    if (fields.longevity !== undefined) dbFields.longevity = fields.longevity;
     dbFields.updated_at = new Date().toISOString();
 
     const { error } = await supabase
@@ -284,4 +293,75 @@ export async function addFamily(family: {
         return { error: error.message };
     }
     return { error: null };
+}
+
+// ── Branch Documents Operations ──
+
+export async function fetchBranchDocuments() {
+    const { data, error } = await supabase
+        .from('branch_documents')
+        .select('*')
+        .order('order_index')
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Failed to fetch branch documents:', error.message);
+        return [];
+    }
+    return data;
+}
+
+export async function getBranchDocument(id: string) {
+    const { data, error } = await supabase
+        .from('branch_documents')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+    if (error) {
+        console.error('Failed to fetch branch document:', error.message);
+        return null;
+    }
+    return data;
+}
+
+export async function upsertBranchDocument(
+    documentData: { id?: string; branch_name: string; content_md: string; order_index?: number; owner_id?: string }
+) {
+    const { id, ...rest } = documentData;
+
+    if (id) {
+        // Update existing
+        const { data, error } = await supabase
+            .from('branch_documents')
+            .update({
+                ...rest,
+                last_edited_at: new Date().toISOString()
+            })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    } else {
+        // Insert new
+        const { data, error } = await supabase
+            .from('branch_documents')
+            .insert([rest])
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    }
+}
+
+export async function deleteBranchDocument(id: string) {
+    const { error } = await supabase
+        .from('branch_documents')
+        .delete()
+        .eq('id', id);
+
+    if (error) throw error;
 }

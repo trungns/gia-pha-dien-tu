@@ -88,6 +88,7 @@ export default function BookPage() {
             const familyName = people.length > 0 ? (people[0].displayName?.split(' ').slice(0, 2).join(' ') || 'Dòng Họ') : 'Dòng Họ';
             const data = generateBookData(people, families, familyName);
             setBookData(data);
+
             setLoading(false);
         };
         fetchAndGenerate();
@@ -184,6 +185,7 @@ export default function BookPage() {
     ];
 
     let pageCounter = 3;
+
     for (const ch of bookData.chapters) {
         const chapterPages = packChapterPages(ch.members, ch.generation, ch.romanNumeral);
         for (const page of chapterPages) {
@@ -347,7 +349,7 @@ export default function BookPage() {
 
                     {bookData.chapters.map((ch, ci) => (
                         <section key={ch.generation} id={`gen-${ch.generation}`} className="page-break px-8 py-12">
-                            <span className="page-label">Trang {ci + 3}</span>
+                            <span className="page-label">Trang {2 + ci + 1}</span>
                             <ChapterContent chapter={ch} theme={t} />
                         </section>
                     ))}
@@ -536,7 +538,14 @@ function PersonEntry({ person, index, theme: t }: { person: BookPerson; index: n
                 <span className="flex-shrink-0 w-6 h-6 rounded-full text-white text-[10px] flex items-center justify-center font-bold mt-0.5"
                     style={{ background: t.primary }}>{index}</span>
                 <div>
-                    <h3 className="text-base font-bold tracking-wide leading-tight" style={{ color: t.primary }}>{person.name}</h3>
+                    <h3 className="text-base font-bold tracking-wide leading-tight" style={{ color: t.primary }}>
+                        <Link href={`/people/${person.handle}`} className="hover:underline text-inherit group relative" style={{ color: t.primary }}>
+                            {person.name}
+                            <span className="absolute -top-2 -right-4 text-[8px] bg-primary/10 px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                                Ấn để xem chi tiết
+                            </span>
+                        </Link>
+                    </h3>
                     <p className="text-xs mt-0.5" style={{ color: t.textMuted }}>
                         {years}
                         {!person.isLiving && person.deathYear && ' · Đã mất'}

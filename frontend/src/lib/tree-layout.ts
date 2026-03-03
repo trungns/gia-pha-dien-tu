@@ -22,6 +22,9 @@ export interface TreeNode {
     isPatrilineal: boolean;
     families: string[];
     parentFamilies: string[];
+    title?: string;
+    degree?: string;
+    longevity?: number;
 }
 
 export interface TreeFamily {
@@ -156,25 +159,21 @@ function buildSubtree(
         const child = personMap.get(childHandle);
         if (!child) continue;
 
-        // Find child's own family (where child is a parent)
-        const childFamily = Array.from(familyMap.values()).find(f =>
+        // Find ALL of the child's own families (where child is a parent)
+        const childFamilies = Array.from(familyMap.values()).filter(f =>
             !visited.has(f.handle) &&
             (f.fatherHandle === childHandle || f.motherHandle === childHandle)
         );
 
-        if (childFamily) {
-            const sub = buildSubtree(childFamily, personMap, familyMap, visited);
-            if (sub) {
-                children.push({
-                    subtree: sub, width: sub.width, anchorX: sub.anchorX,
-                    contour: sub.contour,
-                });
-            } else {
-                const leafContour: Contour = {
-                    left: [-CARD_W / 2],
-                    right: [CARD_W / 2],
-                };
-                children.push({ leaf: child, width: CARD_W, anchorX: CARD_W / 2, contour: leafContour });
+        if (childFamilies.length > 0) {
+            for (const childFamily of childFamilies) {
+                const sub = buildSubtree(childFamily, personMap, familyMap, visited);
+                if (sub) {
+                    children.push({
+                        subtree: sub, width: sub.width, anchorX: sub.anchorX,
+                        contour: sub.contour,
+                    });
+                }
             }
         } else {
             const leafContour: Contour = {
@@ -420,7 +419,13 @@ export function computeLayout(people: TreeNode[], families: TreeFamily[]): Layou
     const rootFamilies = families.filter(f => {
         const fh = f.fatherHandle ? personMap.get(f.fatherHandle) : null;
         const mh = f.motherHandle ? personMap.get(f.motherHandle) : null;
-        return (fh && !childOfAnyFamily.has(fh.handle)) || (mh && !childOfAnyFamily.has(mh.handle));
+
+        // Find the patrilineal parent of this family
+        const patriParent = (fh?.isPatrilineal ? fh : mh?.isPatrilineal ? mh : (fh || mh));
+
+        // A family is a root family ONLY IF its patrilineal parent is NOT a child in any family.
+        // This prevents concubine/spouse families from becoming floating root families when they shouldn't.
+        return patriParent && !childOfAnyFamily.has(patriParent.handle);
     });
 
     const allNodes: PositionedNode[] = [];
@@ -608,7 +613,7 @@ function assignGenerations(people: TreeNode[], families: TreeFamily[]): Map<stri
     }
 
     for (const p of people) {
-        if (p.parentFamilies.length === 0 && !gens.has(p.handle)) {
+        if (p.parentFamilies.length === 0 && p.isPatrilineal && !gens.has(p.handle)) {
             setGen(p.handle, 0);
         }
     }

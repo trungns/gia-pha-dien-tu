@@ -12,6 +12,9 @@ import { Separator } from '@/components/ui/separator';
 import { zodiacYear } from '@/lib/genealogy-types';
 import type { PersonDetail } from '@/lib/genealogy-types';
 import { CommentSection } from '@/components/comment-section';
+import { getBiographyFromMarkdown } from '@/lib/biography-parser';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 
 export default function PersonProfilePage() {
@@ -19,6 +22,8 @@ export default function PersonProfilePage() {
     const router = useRouter();
     const handle = params.handle as string;
     const [person, setPerson] = useState<PersonDetail | null>(null);
+    const [bookBiography, setBookBiography] = useState<string | null>(null);
+    const [familyRels, setFamilyRels] = useState<Record<string, { label: string, childrenStr: string }>>({});
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -44,6 +49,9 @@ export default function PersonProfilePage() {
                         isPatrilineal: row.is_patrilineal as boolean,
                         families: (row.families as string[]) || [],
                         parentFamilies: (row.parent_families as string[]) || [],
+                        title: row.title as string | undefined,
+                        degree: row.degree as string | undefined,
+                        longevity: row.longevity as number | undefined,
                         phone: row.phone as string | undefined,
                         email: row.email as string | undefined,
                         currentAddress: row.current_address as string | undefined,
@@ -51,8 +59,60 @@ export default function PersonProfilePage() {
                         occupation: row.occupation as string | undefined,
                         education: row.education as string | undefined,
                         notes: row.notes as string | undefined,
+                        biography: row.biography as string | undefined,
                     } as PersonDetail);
+
+                    // Fetch families and member names for the relationship tab
+                    const famHandles = [...((row.families as string[]) || []), ...((row.parent_families as string[]) || [])];
+                    if (famHandles.length > 0) {
+                        const { data: fData } = await supabase.from('families').select('*').in('handle', famHandles);
+                        if (fData) {
+                            const allPeopleHandles = new Set<string>();
+                            fData.forEach(f => {
+                                if (f.father_handle) allPeopleHandles.add(f.father_handle);
+                                if (f.mother_handle) allPeopleHandles.add(f.mother_handle);
+                                f.children.forEach((c: string) => allPeopleHandles.add(c));
+                            });
+                            const { data: pData } = await supabase.from('people').select('handle, display_name, notes').in('handle', Array.from(allPeopleHandles));
+                            const pMap = new Map((pData || []).map(p => [p.handle, p]));
+
+                            const rels: Record<string, { label: string, childrenStr: string }> = {};
+                            fData.forEach(f => {
+                                const father = pMap.get(f.father_handle);
+                                const mother = pMap.get(f.mother_handle);
+                                const fatherName = father ? father.display_name : f.father_handle;
+                                const motherName = mother ? mother.display_name : f.mother_handle;
+
+                                let motherExt = '';
+                                if (mother?.notes) {
+                                    const mNotes = mother.notes.toLowerCase();
+                                    if (mNotes.includes('vợ 1') || mNotes.includes('chính thất')) motherExt = ' (Vợ chính)';
+                                    else if (mNotes.includes('vợ 2') || mNotes.includes('kế thất')) motherExt = ' (Kế thất)';
+                                    else if (mNotes.includes('vợ 3')) motherExt = ' (Vợ 3)';
+                                }
+
+                                const childrenNames = (f.children || []).map((c: string) => pMap.get(c)?.display_name || c);
+
+                                let label = f.handle;
+                                if (fatherName && motherName) label = `${fatherName} & ${motherName}${motherExt}`;
+                                else if (fatherName) label = `Gia đình ${fatherName}`;
+                                else if (motherName) label = `Gia đình ${motherName}${motherExt}`;
+
+                                rels[f.handle] = { label, childrenStr: childrenNames.join(', ') };
+                            });
+                            setFamilyRels(rels);
+                        }
+                    }
                 }
+
+                // Fetch biography from Markdown Library (Document-as-Data)
+                try {
+                    const extractedMd = await getBiographyFromMarkdown(handle);
+                    if (extractedMd) setBookBiography(extractedMd);
+                } catch (e) {
+                    console.error("Failed to load markdown biography", e);
+                }
+
             } catch { /* ignore */ }
             setLoading(false);
         };
@@ -145,17 +205,18 @@ export default function PersonProfilePage() {
                                 <User className="h-4 w-4" /> Thông tin cá nhân
                             </CardTitle>
                         </CardHeader>
-                        <CardContent className="grid gap-4 md:grid-cols-2">
+                        <CardContent className="grid gap-x-6 gap-y-3 md:grid-cols-4">
                             <InfoRow label="Họ" value={person.surname || '—'} />
                             <InfoRow label="Tên" value={person.firstName || '—'} />
                             <InfoRow label="Giới tính" value={genderLabel} />
                             {person.nickName && <InfoRow label="Tên thường gọi" value={person.nickName} />}
-                            <InfoRow label="Ngày sinh" value={person.birthDate || (person.birthYear ? `${person.birthYear}` : '—')} />
-                            {person.birthYear && <InfoRow label="Năm âm lịch" value={zodiacYear(person.birthYear) || '—'} />}
+                            <InfoRow label="Ngày sinh (Dương lịch)" value={person.birthDate || (person.birthYear ? `${person.birthYear}` : '—')} />
+                            {person.birthYear && <InfoRow label="Năm sinh (Âm lịch)" value={zodiacYear(person.birthYear) || '—'} />}
                             <InfoRow label="Nơi sinh" value={person.birthPlace || '—'} />
                             {!person.isLiving && (
                                 <>
-                                    <InfoRow label="Ngày mất" value={person.deathDate || (person.deathYear ? `${person.deathYear}` : '—')} />
+                                    <InfoRow label="Ngày mất (Dương lịch)" value={person.deathDate || (person.deathYear ? `${person.deathYear}` : '—')} />
+                                    {person.longevity ? <InfoRow label="Hưởng thọ" value={`${person.longevity} tuổi`} /> : null}
                                     <InfoRow label="Nơi mất" value={person.deathPlace || '—'} />
                                 </>
                             )}
@@ -195,14 +256,16 @@ export default function PersonProfilePage() {
                     )}
 
                     {/* Nghề nghiệp & Học vấn */}
-                    {(person.occupation || person.company || person.education) && (
+                    {(person.occupation || person.company || person.education || person.title || person.degree) && (
                         <Card>
                             <CardHeader>
                                 <CardTitle className="text-base flex items-center gap-2">
-                                    <Briefcase className="h-4 w-4" /> Nghề nghiệp & Học vấn
+                                    <Briefcase className="h-4 w-4" /> Nghề nghiệp, Chức danh & Học vấn
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="grid gap-4 md:grid-cols-2">
+                                {person.title && <InfoRow label="Chức tước / Thụy hiệu" value={person.title} />}
+                                {person.degree && <InfoRow label="Học vị / Đỗ đạt" value={person.degree} />}
                                 {person.occupation && <InfoRow label="Nghề nghiệp" value={person.occupation} />}
                                 {person.company && <InfoRow label="Nơi công tác" value={person.company} />}
                                 {person.education && (
@@ -219,24 +282,35 @@ export default function PersonProfilePage() {
                     )}
 
                     {/* Tiểu sử & Ghi chú */}
-                    {(person.biography || person.notes) && (
+                    {(person.biography || person.notes || bookBiography) && (
                         <Card>
                             <CardHeader>
                                 <CardTitle className="text-base flex items-center gap-2">
                                     <FileText className="h-4 w-4" /> Tiểu sử & Ghi chú
                                 </CardTitle>
                             </CardHeader>
-                            <CardContent className="space-y-3">
-                                {person.biography && (
+                            <CardContent className="space-y-4">
+                                {bookBiography && (
+                                    <div className="prose prose-sm dark:prose-invert max-w-none bg-muted/30 p-4 rounded-lg border border-border/50">
+                                        <div className="flex items-center gap-2 mb-2 text-primary font-medium text-xs">
+                                            <FileText className="h-3.5 w-3.5" />
+                                            Được trích xuất từ Thư viện Gia phả
+                                        </div>
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                            {bookBiography}
+                                        </ReactMarkdown>
+                                    </div>
+                                )}
+                                {!bookBiography && person.biography && (
                                     <div>
-                                        <p className="text-xs font-medium text-muted-foreground mb-1">Tiểu sử</p>
-                                        <p className="text-sm leading-relaxed">{person.biography}</p>
+                                        <p className="text-sm font-medium text-muted-foreground mb-2">Tiểu sử</p>
+                                        <p className="text-base leading-relaxed whitespace-pre-wrap rounded-lg p-3 bg-muted/20 border border-muted-foreground/10">{person.biography}</p>
                                     </div>
                                 )}
                                 {person.notes && (
                                     <div>
-                                        <p className="text-xs font-medium text-muted-foreground mb-1">Ghi chú</p>
-                                        <p className="text-sm leading-relaxed text-muted-foreground">{person.notes}</p>
+                                        <p className="text-sm font-medium text-muted-foreground mb-2">Ghi chú</p>
+                                        <p className="text-base leading-relaxed text-muted-foreground whitespace-pre-wrap rounded-lg p-3 bg-muted/20 border border-muted-foreground/10">{person.notes}</p>
                                     </div>
                                 )}
                             </CardContent>
@@ -270,28 +344,44 @@ export default function PersonProfilePage() {
                         <CardHeader>
                             <CardTitle className="text-base">Quan hệ gia đình</CardTitle>
                         </CardHeader>
-                        <CardContent>
-                            <div className="space-y-3">
+                        <CardContent className="pt-4">
+                            <div className="space-y-6">
                                 <div>
-                                    <p className="text-sm font-medium text-muted-foreground">Gia đình (cha/mẹ)</p>
-                                    {person.parentFamilies && person.parentFamilies.length > 0 ? (
-                                        person.parentFamilies.map((f) => (
-                                            <Badge key={f} variant="outline" className="mr-1">{f}</Badge>
-                                        ))
-                                    ) : (
-                                        <p className="text-sm text-muted-foreground">Không có thông tin</p>
-                                    )}
+                                    <p className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5"><Heart className="h-4 w-4" /> Bậc trên (Cha / Mẹ)</p>
+                                    <div className="space-y-2">
+                                        {person.parentFamilies && person.parentFamilies.length > 0 ? (
+                                            person.parentFamilies.map((f) => {
+                                                const rel = familyRels[f];
+                                                return (
+                                                    <div key={f} className="p-3 bg-muted/30 rounded-lg border border-border/50 shadow-sm transition-all hover:bg-muted/50">
+                                                        <p className="font-semibold text-sm text-primary mb-1">{rel ? rel.label : f}</p>
+                                                        {rel && rel.childrenStr && <p className="text-xs text-muted-foreground leading-relaxed">Con cái: {rel.childrenStr}</p>}
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <p className="text-sm italic text-muted-foreground pl-1">Không có thông tin</p>
+                                        )}
+                                    </div>
                                 </div>
                                 <Separator />
                                 <div>
-                                    <p className="text-sm font-medium text-muted-foreground">Gia đình (vợ/chồng, con)</p>
-                                    {person.families && person.families.length > 0 ? (
-                                        person.families.map((f) => (
-                                            <Badge key={f} variant="outline" className="mr-1">{f}</Badge>
-                                        ))
-                                    ) : (
-                                        <p className="text-sm text-muted-foreground">Không có thông tin</p>
-                                    )}
+                                    <p className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5"><User className="h-4 w-4" /> Gia đình nhỏ (Vợ / Chồng, Con)</p>
+                                    <div className="space-y-2">
+                                        {person.families && person.families.length > 0 ? (
+                                            person.families.map((f) => {
+                                                const rel = familyRels[f];
+                                                return (
+                                                    <div key={f} className="p-3 bg-muted/30 rounded-lg border border-border/50 shadow-sm transition-all hover:bg-muted/50">
+                                                        <p className="font-semibold text-sm text-primary mb-1">{rel ? rel.label : f}</p>
+                                                        {rel && rel.childrenStr && <p className="text-xs text-muted-foreground leading-relaxed">Con cái: {rel.childrenStr}</p>}
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <p className="text-sm italic text-muted-foreground pl-1">Không có thông tin</p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </CardContent>
