@@ -134,7 +134,8 @@ function computeTreeStats(nodes: PositionedNode[], families: TreeFamily[]): Tree
 }
 
 // Default depth at which branches auto-collapse in panoramic view (0-indexed: gen 3 = Đời 4)
-const AUTO_COLLAPSE_GEN = 8;
+// Set to high value to disable auto-collapse and avoid layout bugs
+const AUTO_COLLAPSE_GEN = 99;
 
 // Compute generations via BFS from root persons (persons not in any family as children)
 function computePersonGenerations(people: TreeNode[], families: TreeFamily[]): Map<string, number> {

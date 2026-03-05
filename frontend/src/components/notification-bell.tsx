@@ -13,6 +13,9 @@ export function NotificationBell() {
     const [unreadCount, setUnreadCount] = useState(0);
 
     useEffect(() => {
+        // TEMPORARILY DISABLED: notifications table not yet created in Supabase
+        // Uncomment this after running create_notifications_table.sql
+        /*
         if (!isLoggedIn || !user) return;
 
         const fetchCount = async () => {
@@ -23,12 +26,13 @@ export function NotificationBell() {
                     .eq('user_id', user.id)
                     .eq('is_read', false);
                 setUnreadCount(count || 0);
-            } catch { /* ignore */ }
+            } catch { }
         };
 
         fetchCount();
         const interval = setInterval(fetchCount, 30000); // Poll every 30s
         return () => clearInterval(interval);
+        */
     }, [isLoggedIn, user]);
 
     return (

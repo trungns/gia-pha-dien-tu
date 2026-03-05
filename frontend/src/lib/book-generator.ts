@@ -80,42 +80,12 @@ export function generateBookData(
     const personMap = new Map(people.map(p => [p.handle, p]));
     const familyMap = new Map(families.map(f => [f.handle, f]));
 
-    // ── Step 1: Assign generations via BFS from roots ──
+    // ── Step 1: Use generation field from database ──
+    // Database uses 1-based generation (Gen 1, 2, 3...), book uses 0-based (0, 1, 2...)
     const generations = new Map<string, number>();
-    const childOfFamily = new Set<string>();
-    for (const f of families) {
-        for (const ch of f.children) childOfFamily.add(ch);
-    }
-
-    // Find root persons (not a child of any family)
-    const roots = people.filter(p => !childOfFamily.has(p.handle));
-
-    function setGen(handle: string, gen: number) {
-        if (generations.has(handle)) return;
-        generations.set(handle, gen);
-        const person = personMap.get(handle);
-        if (!person) return;
-        for (const famId of person.families) {
-            const fam = familyMap.get(famId);
-            if (!fam) continue;
-            // Spouse gets same generation
-            if (fam.fatherHandle && fam.fatherHandle !== handle) {
-                if (!generations.has(fam.fatherHandle)) generations.set(fam.fatherHandle, gen);
-            }
-            if (fam.motherHandle && fam.motherHandle !== handle) {
-                if (!generations.has(fam.motherHandle)) generations.set(fam.motherHandle, gen);
-            }
-            // Children get gen+1
-            for (const ch of fam.children) setGen(ch, gen + 1);
-        }
-    }
-
-    for (const r of roots) {
-        setGen(r.handle, 0);
-    }
-    // Catch any unassigned
     for (const p of people) {
-        if (!generations.has(p.handle)) generations.set(p.handle, 0);
+        const bookGen = (p.generation ?? 1) - 1; // Convert 1-based to 0-based
+        generations.set(p.handle, bookGen);
     }
 
     // ── Step 2: Build person entries ──

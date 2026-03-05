@@ -441,17 +441,35 @@ export function computeLayout(people: TreeNode[], families: TreeFamily[]): Layou
     }
 
     // Place orphans (people not in any family tree)
-    for (const p of people) {
-        if (!placed.has(p.handle)) {
-            const gen = gens.get(p.handle) ?? 0;
+    // Group by generation and place near their siblings
+    const orphans = people.filter(p => !placed.has(p.handle));
+    const orphansByGen = new Map<number, TreeNode[]>();
+
+    for (const p of orphans) {
+        const gen = gens.get(p.handle) ?? 0;
+        if (!orphansByGen.has(gen)) orphansByGen.set(gen, []);
+        orphansByGen.get(gen)!.push(p);
+    }
+
+    // For each generation, place orphans at the end of that generation row
+    for (const [gen, orphansInGen] of orphansByGen.entries()) {
+        // Find the rightmost X position in this generation
+        const nodesInGen = allNodes.filter(n => n.generation === gen);
+        const maxX = nodesInGen.length > 0
+            ? Math.max(...nodesInGen.map(n => n.x + CARD_W))
+            : 0;
+
+        let orphanX = maxX + H_SPACE * 2; // Add extra spacing to separate orphans visually
+
+        for (const p of orphansInGen) {
             allNodes.push({
                 node: p,
-                x: cursorX,
+                x: orphanX,
                 y: gen * (CARD_H + V_SPACE),
                 generation: gen,
             });
             placed.add(p.handle);
-            cursorX += CARD_W + H_SPACE;
+            orphanX += CARD_W + H_SPACE;
         }
     }
 
@@ -614,11 +632,15 @@ function assignGenerations(people: TreeNode[], families: TreeFamily[]): Map<stri
 
     for (const p of people) {
         if (p.parentFamilies.length === 0 && p.isPatrilineal && !gens.has(p.handle)) {
-            setGen(p.handle, 0);
+            // Use actual generation from database, not 0
+            setGen(p.handle, p.generation - 1);
         }
     }
     for (const p of people) {
-        if (!gens.has(p.handle)) setGen(p.handle, 0);
+        if (!gens.has(p.handle)) {
+            // Use actual generation from database for orphans/floating nodes
+            setGen(p.handle, p.generation - 1);
+        }
     }
 
     return gens;
